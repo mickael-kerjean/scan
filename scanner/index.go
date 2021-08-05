@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -49,7 +50,7 @@ Usage: ftpscan [concurrency] [start ip]
 		go func() {
 			for ip := range queue {
 			   //if stmt == nil || ip == nil {}
-			   //runner(stmt, ip)
+			   runner(stmt, ip)
 			}
 			wg.Done()
 		}()
@@ -113,9 +114,12 @@ func runner(stmt *sql.Stmt, ip net.IP) {
 
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:21", ip.String()), DIAL_TIMEOUT)
 	if err != nil {
-		return
+	   if strings.Contains(err.Error(), "i/o timeout") == false && strings.Contains(err.Error(), "network is unreachable") == false && strings.Contains(err.Error(), "connection refused") == false && strings.Contains(err.Error(), "no route to host") == false && strings.Contains(err.Error(), "connection reset by peer") == false && strings.Contains(err.Error(), "protocol not available") == false {
+	       fmt.Printf("ERR[%+v]", err)
+	   }
+	   return
 	}
-	fmt.Printf("[%s]", ip.String())
+	//fmt.Printf("[%s]", ip.String())
 	conn.Close()
 	insertDB(stmt, ip)
 }
@@ -138,26 +142,25 @@ func insertDB(stmt *sql.Stmt, ip net.IP) {
 // 2.1.0.0
 // ...
 func iterateThroughPublicIPs(queue chan net.IP) {
-	for a0 := 0; a0 < 255; a0++ {
-		for a1 := 0; a1 < 255; a1++ {
-		        fmt.Printf("\n+>x.x.%d.%d ", a1, a0)
-			for a2 := 0; a2 < 255; a2++ {	
-				for a3 := 0; a3 < 255; a3++ {
-					CURRENT_IP = net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", a3, a2, a1, a0))
-					queue <- CURRENT_IP
+        ipstr := strings.Split(CURRENT_IP.String(), ".")
+	ip := []int{0,0,0,0}
+	for i:=0; i<len(ipstr) && i<4; i++ {
+	    if number, err := strconv.Atoi(ipstr[i]); err == nil {
+	       ip[i] = number
+	    }
+	}
+
+	for a0 := ip[3]; a0 <= 255; a0++ {
+		for a1 := ip[2]; a1 <= 255; a1++ {
+		    	fmt.Printf("\n+>x.x.%d.%d ", a1, a0)
+			for a2 := ip[1]; a2 <= 255; a2++ {
+				for a3 := ip[0]; a3 <= 255; a3++ {
+					queue <- net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", a3, a2, a1, a0))
 				}
 			}
 		}
+		if a0 >= ip[3] + 9 {
+		   break
+		}
 	}
-}
-
-// https://stackoverflow.com/questions/31191313/how-to-get-the-next-ip-address
-func nextIP(ip net.IP) net.IP {
-	i := ip.To4()
-	v := uint(i[0])<<24 + uint(i[1])<<16 + uint(i[2])<<8 + uint(i[3]) + 1
-	v3 := byte(v & 0xFF)
-	v2 := byte((v >> 8) & 0xFF)
-	v1 := byte((v >> 16) & 0xFF)
-	v0 := byte((v >> 24) & 0xFF)
-	return net.IPv4(v0, v1, v2, v3)
 }
