@@ -49,8 +49,8 @@ Usage: ftpscan [concurrency] [start ip]
 		wg.Add(1)
 		go func() {
 			for ip := range queue {
-			   //if stmt == nil || ip == nil {}
-			   runner(stmt, ip)
+				//if stmt == nil || ip == nil {}
+				runner(stmt, ip)
 			}
 			wg.Done()
 		}()
@@ -71,7 +71,7 @@ func setup() (err error) {
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )`); err != nil {
 		return err
-	} else if _, err = DB.Exec("PRAGMA journal_mode=OFF;"); err != nil {
+	} else if _, err = DB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		return err
 	} else if _, err = DB.Exec("PRAGMA synchronous = 0;"); err != nil {
 		return err
@@ -114,10 +114,10 @@ func runner(stmt *sql.Stmt, ip net.IP) {
 
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:21", ip.String()), DIAL_TIMEOUT)
 	if err != nil {
-	   if strings.Contains(err.Error(), "i/o timeout") == false && strings.Contains(err.Error(), "network is unreachable") == false && strings.Contains(err.Error(), "connection refused") == false && strings.Contains(err.Error(), "no route to host") == false && strings.Contains(err.Error(), "connection reset by peer") == false && strings.Contains(err.Error(), "protocol not available") == false {
-	       fmt.Printf("ERR[%+v]", err)
-	   }
-	   return
+		if strings.Contains(err.Error(), "i/o timeout") == false && strings.Contains(err.Error(), "network is unreachable") == false && strings.Contains(err.Error(), "connection refused") == false && strings.Contains(err.Error(), "no route to host") == false && strings.Contains(err.Error(), "connection reset by peer") == false && strings.Contains(err.Error(), "protocol not available") == false {
+			fmt.Printf("ERR[%+v]", err)
+		}
+		return
 	}
 	//fmt.Printf("[%s]", ip.String())
 	conn.Close()
@@ -142,25 +142,25 @@ func insertDB(stmt *sql.Stmt, ip net.IP) {
 // 2.1.0.0
 // ...
 func iterateThroughPublicIPs(queue chan net.IP) {
-        ipstr := strings.Split(CURRENT_IP.String(), ".")
-	ip := []int{0,0,0,0}
-	for i:=0; i<len(ipstr) && i<4; i++ {
-	    if number, err := strconv.Atoi(ipstr[i]); err == nil {
-	       ip[i] = number
-	    }
+	ipstr := strings.Split(CURRENT_IP.String(), ".")
+	ip := []int{0, 0, 0, 0}
+	for i := 0; i < len(ipstr) && i < 4; i++ {
+		if number, err := strconv.Atoi(ipstr[i]); err == nil {
+			ip[i] = number
+		}
 	}
 
 	for a0 := ip[3]; a0 <= 255; a0++ {
 		for a1 := ip[2]; a1 <= 255; a1++ {
-		    	fmt.Printf("\n+>x.x.%d.%d ", a1, a0)
+			fmt.Printf("\n+>x.x.%d.%d ", a1, a0)
 			for a2 := ip[1]; a2 <= 255; a2++ {
 				for a3 := ip[0]; a3 <= 255; a3++ {
 					queue <- net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", a3, a2, a1, a0))
 				}
 			}
 		}
-		if a0 >= ip[3] + 9 {
-		   break
+		if a0 >= ip[3]+9 {
+			break
 		}
 	}
 }
