@@ -13,7 +13,7 @@ import (
 
 var (
 	DB          *sql.DB = nil
-	CONCURRENCY int     = 25000
+	CONCURRENCY int     = 1000
 	Mu          sync.Mutex
 )
 
@@ -33,7 +33,9 @@ func main() {
 	for i := 0; i < CONCURRENCY; i++ {
 		wg.Add(1)
 		go func() {
-			runner(stmt, queue)
+			for ip := range queue {
+				runner(stmt, ip)
+			}
 			wg.Done()
 		}()
 	}
@@ -75,47 +77,46 @@ func setup() (err error) {
 	return nil
 }
 
-func runner(stmt *sql.Stmt, queue chan net.IP) {
-	for ip := range queue {
-		//fmt.Printf("%+v\n", ip)
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:21", ip.String()), 1*time.Second)
-		if err != nil {
-			fmt.Printf("%v => %+v\n", ip, err)
-			insertDB(stmt, false, ip.String(), false, false, err.Error())
-			continue
-		}
-		defer conn.Close()
-		fmt.Fprintf(conn, "USER anonymous\r\n")
-		fmt.Fprintf(conn, "PASS anonymous\r\n")
-		fmt.Fprintf(conn, "SYST anonymous\r\n")
-		fmt.Fprintf(conn, "FEAT anonymous\r\n")
-		fmt.Fprintf(conn, "QUIT\r\n")
-		result := struct {
-			Content   string
-			Ftps      bool
-			Anonymous bool
-		}{"", false, false}
+func runner(stmt *sql.Stmt, ip net.IP) {
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:21", ip.String()), 1*time.Second)
+	if err != nil {
+		fmt.Printf("%v => %+v\n", ip, err)
+		insertDB(stmt, false, ip.String(), false, false, err.Error())
+		return
+	}
+	defer func() {
+		conn.Close()
+	}()
+	fmt.Fprintf(conn, "USER anonymous\r\n")
+	fmt.Fprintf(conn, "PASS anonymous\r\n")
+	fmt.Fprintf(conn, "SYST anonymous\r\n")
+	fmt.Fprintf(conn, "FEAT anonymous\r\n")
+	fmt.Fprintf(conn, "QUIT\r\n")
+	result := struct {
+		Content   string
+		Ftps      bool
+		Anonymous bool
+	}{"", false, false}
 
-		s := bufio.NewScanner(conn)
-		msg := make(chan string)
-		go func() {
-			for s.Scan() {
-				line := s.Text()
-				if strings.HasPrefix(line, "AUTH TLS") {
-					result.Ftps = true
-				} else if strings.HasPrefix(line, "230 ") {
-					result.Anonymous = true
-				}
-				result.Content += line + "\n"
+	s := bufio.NewScanner(conn)
+	msg := make(chan string)
+	go func() {
+		for s.Scan() {
+			line := s.Text()
+			if strings.HasPrefix(line, "AUTH TLS") {
+				result.Ftps = true
+			} else if strings.HasPrefix(line, "230 ") {
+				result.Anonymous = true
 			}
-			msg <- "OK"
-		}()
-		select {
-		case <-time.After(time.Second * 1):
-			insertDB(stmt, false, ip.String(), false, false, "")
-		case <-msg:
-			insertDB(stmt, true, ip.String(), result.Ftps, result.Anonymous, result.Content)
+			result.Content += line + "\n"
 		}
+		msg <- "OK"
+	}()
+	select {
+	case <-time.After(time.Second * 1):
+		insertDB(stmt, false, ip.String(), false, false, "")
+	case <-msg:
+		insertDB(stmt, true, ip.String(), result.Ftps, result.Anonymous, result.Content)
 	}
 }
 
