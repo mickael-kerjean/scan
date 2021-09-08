@@ -36,11 +36,6 @@ Usage: ftpscan [concurrency] [start ip]
 	} else if n, err := strconv.Atoi(os.Args[1]); err == nil {
 		CONCURRENCY = n
 	}
-	stmt, err := DB.Prepare("INSERT INTO host(ip) VALUES($1)")
-	if err != nil {
-		fmt.Printf("ERROR %s\n", err.Error())
-		return
-	}
 	fmt.Printf("> concurrency: %d\n", CONCURRENCY)
 	fmt.Printf("> start ip: %s\n", CURRENT_IP.String())
 	queue := make(chan net.IP, CHANSIZE)
@@ -49,9 +44,7 @@ Usage: ftpscan [concurrency] [start ip]
 		wg.Add(1)
 		go func() {
 			for ip := range queue {
-				// if stmt == nil || ip == nil {
-				// }
-				runner(stmt, ip)
+				runner(ip)
 			}
 			wg.Done()
 		}()
@@ -63,7 +56,7 @@ Usage: ftpscan [concurrency] [start ip]
 }
 
 func setup() (err error) {
-	DB, err = sql.Open("sqlite3", "./ftp.sqlite?_busy_timeout=5000")
+	DB, err = sql.Open("sqlite3", "./ftp.sqlite?_busy_timeout=5000&_journal_mode=DELETE")
 	if err != nil {
 		return err
 	}
@@ -79,7 +72,7 @@ func setup() (err error) {
 	return nil
 }
 
-func runner(stmt *sql.Stmt, ip net.IP) {
+func runner(ip net.IP) {
 	if func(ip net.IP) bool {
 		var PrivateIPNetworks = []net.IPNet{
 			net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(8, 32)},
@@ -131,14 +124,14 @@ func runner(stmt *sql.Stmt, ip net.IP) {
 	}
 	//fmt.Printf("[%s]", ip.String())
 	conn.Close()
-	if err := insertDB(stmt, ip); err != nil {
+	if err := insertDB(ip); err != nil {
 		fmt.Printf("[err::%s]", err.Error())
 	}
 }
-func insertDB(stmt *sql.Stmt, ip net.IP) error {
+func insertDB(ip net.IP) error {
 	Mu.Lock()
 	defer Mu.Unlock()
-	if _, err := stmt.Exec(ip.String()); err != nil {
+	if _, err := DB.Exec("INSERT INTO host(ip) VALUES($1)", ip.String()); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return nil
 		}
