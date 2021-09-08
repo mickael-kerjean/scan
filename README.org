@@ -1,0 +1,8 @@
+#+TITLE: Architecture
+
+link: ./github/architecture.svg
+
+1. step1: Scan phase - scan accross the entire ipv4 range
+2. step2: Explore phase - find publicly available FTP servers
+3. step3: Index phase - crawl publicly available FTP servers
+4. step4: Maintain phase - give a change to data that has been index a long time ago to be refreshed
