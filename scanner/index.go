@@ -17,7 +17,7 @@ var (
 	CURRENT_IP   net.IP        = net.IPv4(0, 0, 0, 0)
 	CONCURRENCY  int           = 1
 	CHANSIZE     int           = 30000
-	DIAL_TIMEOUT time.Duration = 1 * time.Second
+	DIAL_TIMEOUT time.Duration = 15 * time.Second
 	Mu           sync.Mutex
 )
 
@@ -49,7 +49,8 @@ Usage: ftpscan [concurrency] [start ip]
 		wg.Add(1)
 		go func() {
 			for ip := range queue {
-				//if stmt == nil || ip == nil {}
+				// if stmt == nil || ip == nil {
+				// }
 				runner(stmt, ip)
 			}
 			wg.Done()
@@ -71,36 +72,40 @@ func setup() (err error) {
   timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )`); err != nil {
 		return err
-	} else if _, err = DB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		return err
 	} else if _, err = DB.Exec("PRAGMA synchronous = 0;"); err != nil {
 		return err
-	} else if _, err = DB.Exec("PRAGMA cache_size = 1000000;"); err != nil {
-		return err
-	} else if _, err = DB.Exec("PRAGMA locking_mode = EXCLUSIVE;"); err != nil {
-		return err
-	} else if _, err = DB.Exec("PRAGMA temp_store = MEMORY;"); err != nil {
-		return err
 	}
-	DB.Exec("CREATE INDEX idx_timestamp ON host (timestamp);")
+	DB.Exec("CREATE UNIQUE INDEX idx_ip ON host (ip);")
 	return nil
 }
 
 func runner(stmt *sql.Stmt, ip net.IP) {
 	if func(ip net.IP) bool {
 		var PrivateIPNetworks = []net.IPNet{
-			net.IPNet{
-				IP:   net.ParseIP("10.0.0.0"),
-				Mask: net.CIDRMask(8, 32),
-			},
-			net.IPNet{
-				IP:   net.ParseIP("172.16.0.0"),
-				Mask: net.CIDRMask(12, 32),
-			},
-			net.IPNet{
-				IP:   net.ParseIP("192.168.0.0"),
-				Mask: net.CIDRMask(16, 32),
-			},
+			net.IPNet{IP: net.ParseIP("10.0.0.0"), Mask: net.CIDRMask(8, 32)},
+			net.IPNet{IP: net.ParseIP("172.16.0.0"), Mask: net.CIDRMask(12, 32)},
+			net.IPNet{IP: net.ParseIP("192.168.0.0"), Mask: net.CIDRMask(16, 32)},
+			// reports
+			net.IPNet{IP: net.ParseIP("5.75.128.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("23.88.0.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("49.12.128.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("49.13.0.0"), Mask: net.CIDRMask(16, 32)},
+			net.IPNet{IP: net.ParseIP("65.108.0.0"), Mask: net.CIDRMask(16, 32)},
+			net.IPNet{IP: net.ParseIP("65.109.0.0"), Mask: net.CIDRMask(16, 32)},
+			net.IPNet{IP: net.ParseIP("78.46.128.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("78.47.0.0"), Mask: net.CIDRMask(16, 32)},
+			net.IPNet{IP: net.ParseIP("88.198.0.0"), Mask: net.CIDRMask(16, 32)},
+			net.IPNet{IP: net.ParseIP("91.107.0.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("95.217.252.2"), Mask: net.CIDRMask(22, 32)},
+			net.IPNet{IP: net.ParseIP("128.140.0.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("142.132.128.0"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("162.55.200.0"), Mask: net.CIDRMask(21, 32)},
+			net.IPNet{IP: net.ParseIP("167.233.0.0"), Mask: net.CIDRMask(16, 32)},
+			net.IPNet{IP: net.ParseIP("168.119.215.2"), Mask: net.CIDRMask(20, 32)},
+			net.IPNet{IP: net.ParseIP("188.34.168.2"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("213.133.113.2"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("213.239.228.2"), Mask: net.CIDRMask(17, 32)},
+			net.IPNet{IP: net.ParseIP("213.239.228.2"), Mask: net.CIDRMask(19, 32)},
 		}
 		for _, ipNet := range PrivateIPNetworks {
 			if ipNet.Contains(ip) {
@@ -114,21 +119,33 @@ func runner(stmt *sql.Stmt, ip net.IP) {
 
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:21", ip.String()), DIAL_TIMEOUT)
 	if err != nil {
-		if strings.Contains(err.Error(), "i/o timeout") == false && strings.Contains(err.Error(), "network is unreachable") == false && strings.Contains(err.Error(), "connection refused") == false && strings.Contains(err.Error(), "no route to host") == false && strings.Contains(err.Error(), "connection reset by peer") == false && strings.Contains(err.Error(), "protocol not available") == false {
+		if strings.Contains(err.Error(), "i/o timeout") == false &&
+			strings.Contains(err.Error(), "network is unreachable") == false &&
+			strings.Contains(err.Error(), "connection refused") == false &&
+			strings.Contains(err.Error(), "no route to host") == false &&
+			strings.Contains(err.Error(), "connection reset by peer") == false &&
+			strings.Contains(err.Error(), "protocol not available") == false {
 			fmt.Printf("ERR[%+v]", err)
 		}
 		return
 	}
 	//fmt.Printf("[%s]", ip.String())
 	conn.Close()
-	insertDB(stmt, ip)
+	if err := insertDB(stmt, ip); err != nil {
+		fmt.Printf("[err::%s]", err.Error())
+	}
 }
-func insertDB(stmt *sql.Stmt, ip net.IP) {
+func insertDB(stmt *sql.Stmt, ip net.IP) error {
 	Mu.Lock()
 	defer Mu.Unlock()
 	if _, err := stmt.Exec(ip.String()); err != nil {
-		fmt.Printf("[err::%s]", ip.String())
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return nil
+		}
+		return err
 	}
+	fmt.Printf("[%s]", ip.String())
+	return nil
 }
 
 // to avoid being to hard on networks, we're traversing to the public internet like this:
@@ -151,16 +168,17 @@ func iterateThroughPublicIPs(queue chan net.IP) {
 	}
 
 	for a0 := ip[3]; a0 <= 255; a0++ {
+		ip[3] = 0
 		for a1 := ip[2]; a1 <= 255; a1++ {
+			ip[2] = 0
 			fmt.Printf("\n+>x.x.%d.%d ", a1, a0)
 			for a2 := ip[1]; a2 <= 255; a2++ {
+				ip[1] = 0
 				for a3 := ip[0]; a3 <= 255; a3++ {
+					ip[0] = 0
 					queue <- net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", a3, a2, a1, a0))
 				}
 			}
-		}
-		if a0 >= ip[3]+9 {
-			break
 		}
 	}
 }
